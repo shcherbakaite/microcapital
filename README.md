@@ -1,5 +1,11 @@
 # MicroCapital
 
+Online viewer for Capital Essentials XML files.
+
+The app is published at **https://shcherbakaite.github.io/microcapital/**
+
+# License
+
 Copyright (C) 2025 Vladislav Shcherbakov
 
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
@@ -9,8 +15,6 @@ This program is distributed in the hope that it will be useful, but WITHOUT ANY 
 You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 ---
-
-Base WASM Rust application using [egui](https://github.com/emilk/egui) and [eframe](https://github.com/emilk/egui/tree/master/crates/eframe).
 
 ## Prerequisites
 
