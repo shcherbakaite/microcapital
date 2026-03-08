@@ -732,6 +732,10 @@ impl TabViewer for Viewer {
     }
 }
 
+/// Pending result from async file load (WASM only).
+#[cfg(target_arch = "wasm32")]
+type PendingWebLoad = std::rc::Rc<std::cell::RefCell<Option<Result<(Design, HashMap<String, DiagramContent>), String>>>>;
+
 /// Base egui application state and UI.
 pub struct MicroCapitalApp {
     dock_state: DockState<Tab>,
@@ -740,6 +744,8 @@ pub struct MicroCapitalApp {
     dark_mode: bool,
     /// About dialog visible
     about_open: bool,
+    #[cfg(target_arch = "wasm32")]
+    pending_web_load: PendingWebLoad,
 }
 
 impl Default for MicroCapitalApp {
@@ -763,6 +769,8 @@ impl MicroCapitalApp {
             state: std::rc::Rc::new(std::cell::RefCell::new(AppState::default())),
             dark_mode,
             about_open: false,
+            #[cfg(target_arch = "wasm32")]
+            pending_web_load: std::rc::Rc::new(std::cell::RefCell::new(None)),
         }
     }
 
@@ -778,6 +786,25 @@ impl MicroCapitalApp {
 
 impl eframe::App for MicroCapitalApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        #[cfg(target_arch = "wasm32")]
+        if let Some(result) = self.pending_web_load.borrow_mut().take() {
+            match result {
+                Ok((design, diagram_contents)) => {
+                    let mut state = self.state.borrow_mut();
+                    state.design = Some(design);
+                    state.diagram_cache = diagram_contents;
+                    state.xml_path = None; // No path on web; diagrams must be in initial parse
+                    state.selected_diagram_id = None;
+                    state.selected_diagram_name = None;
+                    state.load_error = None;
+                    *state.pending_focus_element.borrow_mut() = None;
+                }
+                Err(e) => {
+                    self.state.borrow_mut().load_error = Some(e);
+                }
+            }
+        }
+
         // Apply theme before any UI is drawn
         ctx.set_visuals(if self.dark_mode {
             egui::Visuals::dark()
@@ -791,33 +818,54 @@ impl eframe::App for MicroCapitalApp {
                 ui.menu_button("File", |ui| {
                     if ui.button("Open XML…").clicked() {
                         ui.close();
-                        if let Some(path) = rfd::FileDialog::new()
-                            .add_filter("Capital XML", &["xml"])
-                            .pick_file()
+                        #[cfg(not(target_arch = "wasm32"))]
                         {
-                            match std::fs::File::open(&path) {
-                                Ok(f) => {
-                                    let reader = std::io::BufReader::new(f);
-                                    match parse_project(reader) {
-                                        Ok((design, diagram_contents)) => {
-                                            let mut state = self.state.borrow_mut();
-                                            state.design = Some(design);
-                                            state.diagram_cache = diagram_contents;
-                                            state.xml_path = Some(path);
-                                            state.selected_diagram_id = None;
-                                            state.selected_diagram_name = None;
-                                            state.load_error = None;
-                                            *state.pending_focus_element.borrow_mut() = None;
-                                        }
-                                        Err(e) => {
-                                            self.state.borrow_mut().load_error = Some(e);
+                            if let Some(path) = rfd::FileDialog::new()
+                                .add_filter("Capital XML", &["xml"])
+                                .pick_file()
+                            {
+                                match std::fs::File::open(&path) {
+                                    Ok(f) => {
+                                        let reader = std::io::BufReader::new(f);
+                                        match parse_project(reader) {
+                                            Ok((design, diagram_contents)) => {
+                                                let mut state = self.state.borrow_mut();
+                                                state.design = Some(design);
+                                                state.diagram_cache = diagram_contents;
+                                                state.xml_path = Some(path);
+                                                state.selected_diagram_id = None;
+                                                state.selected_diagram_name = None;
+                                                state.load_error = None;
+                                                *state.pending_focus_element.borrow_mut() = None;
+                                            }
+                                            Err(e) => {
+                                                self.state.borrow_mut().load_error = Some(e);
+                                            }
                                         }
                                     }
-                                }
-                                Err(e) => {
-                                    self.state.borrow_mut().load_error = Some(e.to_string());
+                                    Err(e) => {
+                                        self.state.borrow_mut().load_error = Some(e.to_string());
+                                    }
                                 }
                             }
+                        }
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            let pending = self.pending_web_load.clone();
+                            let ctx = ctx.clone();
+                            wasm_bindgen_futures::spawn_local(async move {
+                                let file = rfd::AsyncFileDialog::new()
+                                    .add_filter("Capital XML", &["xml"])
+                                    .pick_file()
+                                    .await;
+                                if let Some(file) = file {
+                                    let bytes = file.read().await;
+                                    let reader = std::io::BufReader::new(std::io::Cursor::new(bytes));
+                                    let result = parse_project(reader);
+                                    *pending.borrow_mut() = Some(result);
+                                    ctx.request_repaint();
+                                }
+                            });
                         }
                     }
                     if ui.button("Quit").clicked() {
