@@ -1,6 +1,6 @@
 # MicroCapital
 
-Copyright (C) 2025 microcapital contributors
+Copyright (C) 2025 Vladislav Shcherbakov
 
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
@@ -39,6 +39,13 @@ wasm-pack build --target web --lib
 ```
 
 Then serve the project directory (e.g. `python -m http.server 8080` or `npx serve`) and open `http://localhost:8080` in a browser. Load `index.html` (it loads `pkg/microcapital.js`).
+
+## Deploy to GitHub Pages
+
+The app is published as a project page at **https://shcherbakaite.github.io/microcapital/**.
+
+1. In the repo: **Settings → Pages → Build and deployment**, set **Source** to **GitHub Actions**.
+2. Push to `master` to trigger deployment. The workflow builds with Trunk (configured for the `/microcapital/` base path) and deploys to GitHub Pages.
 
 ## Project layout
 

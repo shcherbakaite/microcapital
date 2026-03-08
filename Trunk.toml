@@ -1,0 +1,3 @@
+[build]
+# Base URL for GitHub Pages project site (https://username.github.io/microcapital/)
+public_url = "/microcapital/"
