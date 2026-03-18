@@ -4,9 +4,11 @@ mod capital_xml;
 mod model;
 mod outline;
 mod schematic_view;
+mod symbol_lib;
 
 pub use app::MicroCapitalApp;
 pub use model::{Design, DiagramContent, DiagramInfo};
+pub use symbol_lib::{parse_symbol_library, SymbolDef, SymbolLibrary, SymbolGfx};
 
 #[cfg(target_arch = "wasm32")]
 use eframe::wasm_bindgen::prelude::*;

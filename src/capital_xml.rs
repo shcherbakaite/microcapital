@@ -110,6 +110,8 @@ struct XmlConnectivity {
 struct XmlWire {
     #[xml(attr = "id")]
     id: Option<String>,
+    #[xml(attr = "name")]
+    name: Option<String>,
     #[xml(attr = "shortdescription")]
     shortdescription: Option<String>,
 }
@@ -199,6 +201,8 @@ struct XmlDeviceconnector {
 struct XmlPin {
     #[xml(attr = "id")]
     id: Option<String>,
+    #[xml(attr = "name")]
+    name: Option<String>,
     #[xml(attr = "shortdescription")]
     shortdescription: Option<String>,
     #[xml(attr = "connectedpin")]
@@ -426,11 +430,30 @@ pub fn parse_project<R: BufRead>(reader: R) -> Result<(Design, HashMap<String, D
         }
     }
 
+    // Build wire_id_to_name from connectivity <wire> elements (id -> name)
+    let mut wire_id_to_name: HashMap<String, String> = HashMap::new();
+    for conn in &logicaldesign.connectivity {
+        for w in &conn.wire {
+            if let Some(id) = &w.id {
+                if let Some(name) = &w.name {
+                    let decoded = decode_entity(name);
+                    if !decoded.is_empty() {
+                        wire_id_to_name.insert(id.clone(), decoded);
+                    }
+                }
+            }
+        }
+    }
+
     // Build wire list from wire_to_diagram (will enrich names from diagram content later)
     for (id, diagram_name) in wire_to_diagram {
+        let name = wire_id_to_name
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| format!("Wire {}", id));
         design.connectivity.wires.push(WireRef {
             id: id.clone(),
-            name: format!("Wire {}", id),
+            name,
             diagram_name,
         });
     }
@@ -537,6 +560,12 @@ pub fn parse_project<R: BufRead>(reader: R) -> Result<(Design, HashMap<String, D
                                 .insert(pid.clone(), decoded);
                         }
                     }
+                    if let (Some(pid), Some(name)) = (&pin.id, &pin.name) {
+                        let decoded = decode_entity(name);
+                        if !decoded.is_empty() {
+                            design.pin_name.insert(pid.clone(), decoded);
+                        }
+                    }
                     if let (Some(pid), Some(cp)) = (&pin.id, &pin.connectedpin) {
                         design.pin_connections.push((pid.clone(), cp.clone()));
                     }
@@ -561,6 +590,12 @@ pub fn parse_project<R: BufRead>(reader: R) -> Result<(Design, HashMap<String, D
                                 .insert(pid.clone(), decoded);
                         }
                     }
+                    if let (Some(pid), Some(name)) = (&pin.id, &pin.name) {
+                        let decoded = decode_entity(name);
+                        if !decoded.is_empty() {
+                            design.pin_name.insert(pid.clone(), decoded);
+                        }
+                    }
                     if let (Some(pid), Some(cp)) = (&pin.id, &pin.connectedpin) {
                         design.pin_connections.push((pid.clone(), cp.clone()));
                     }
@@ -575,6 +610,12 @@ pub fn parse_project<R: BufRead>(reader: R) -> Result<(Design, HashMap<String, D
                         design.pin_shortdescription.insert(pid.clone(), decoded.clone());
                     }
                 }
+                if let (Some(pid), Some(name)) = (&pin.id, &pin.name) {
+                    let decoded = decode_entity(name);
+                    if !decoded.is_empty() {
+                        design.pin_name.insert(pid.clone(), decoded);
+                    }
+                }
                 if let (Some(pid), Some(cp)) = (&pin.id, &pin.connectedpin) {
                     design.pin_connections.push((pid.clone(), cp.clone()));
                 }
@@ -585,6 +626,12 @@ pub fn parse_project<R: BufRead>(reader: R) -> Result<(Design, HashMap<String, D
                 if !sd.is_empty() {
                     let decoded = decode_entity(sd);
                     design.pin_shortdescription.insert(pid.clone(), decoded.clone());
+                }
+            }
+            if let (Some(pid), Some(name)) = (&pin.id, &pin.name) {
+                let decoded = decode_entity(name);
+                if !decoded.is_empty() {
+                    design.pin_name.insert(pid.clone(), decoded);
                 }
             }
             if let (Some(pid), Some(cp)) = (&pin.id, &pin.connectedpin) {
@@ -602,7 +649,7 @@ pub fn parse_project<R: BufRead>(reader: R) -> Result<(Design, HashMap<String, D
         }
     }
 
-    // Propagate pin shortdescription through connected pins
+    // Propagate pin shortdescription and pin name through connected pins
     let mut changed = true;
     while changed {
         changed = false;
@@ -616,6 +663,18 @@ pub fn parse_project<R: BufRead>(reader: R) -> Result<(Design, HashMap<String, D
             if let Some(desc) = design.pin_shortdescription.get(b) {
                 if !desc.is_empty() && design.pin_shortdescription.get(a) != Some(desc) {
                     design.pin_shortdescription.insert(a.clone(), desc.clone());
+                    changed = true;
+                }
+            }
+            if let Some(name) = design.pin_name.get(a) {
+                if !name.is_empty() && design.pin_name.get(b) != Some(name) {
+                    design.pin_name.insert(b.clone(), name.clone());
+                    changed = true;
+                }
+            }
+            if let Some(name) = design.pin_name.get(b) {
+                if !name.is_empty() && design.pin_name.get(a) != Some(name) {
+                    design.pin_name.insert(a.clone(), name.clone());
                     changed = true;
                 }
             }

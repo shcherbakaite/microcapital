@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use crate::capital_xml::{load_diagram_content, parse_project};
 use crate::model::{Design, DiagramContent, ElementRef, CrossRefKey, CrossRefMap, WireRef};
 use crate::schematic_view;
+use crate::symbol_lib::{parse_symbol_library, SymbolLibrary};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tab {
@@ -51,6 +52,10 @@ pub struct AppState {
     pub last_scrolled_to: std::rc::Rc<std::cell::RefCell<Option<(String, String)>>>,
     /// When set from Elements view selection, schematic will pan to center this element on next paint.
     pub pending_focus_element: std::rc::Rc<std::cell::RefCell<Option<(String, String)>>>,
+    /// Loaded symbol library (from File > Load Symbol Library).
+    pub symbol_library: Option<SymbolLibrary>,
+    pub symbol_library_path: Option<PathBuf>,
+    pub symbol_library_error: Option<String>,
 }
 
 impl Default for AppState {
@@ -72,6 +77,9 @@ impl Default for AppState {
             expanded_elements: std::rc::Rc::new(std::cell::RefCell::new(HashSet::new())),
             last_scrolled_to: std::rc::Rc::new(std::cell::RefCell::new(None)),
             pending_focus_element: std::rc::Rc::new(std::cell::RefCell::new(None)),
+            symbol_library: None,
+            symbol_library_path: None,
+            symbol_library_error: None,
         }
     }
 }
@@ -298,13 +306,13 @@ impl TabViewer for Viewer {
                     if egui::CollapsingHeader::new(format!("Devices ({})", filtered_devices.len()))
                         .open(category_open("Device"))
                         .show(ui, |ui| {
-                        for el in &filtered_devices {
+                        for (idx, el) in filtered_devices.iter().enumerate() {
                             let key = sel_key(el);
                             let name_alt = [el.name.clone(), el.id.clone()];
                             let diagrams = diagram_instances(cross_ref_map, "Device", &name_alt, &el.diagram_name);
                             let is_selected = sel.as_ref().map(|(t, n)| t == "Device" && (n == &el.name || n == &el.id)).unwrap_or(false);
                             let default_open = state.expanded_elements.borrow().contains(&("Device".to_string(), key.clone())) || is_selected;
-                            let header_id = ("element", "Device", el.name.as_str(), default_open);
+                            let header_id = ("element", "Device", key.as_str(), idx, default_open);
                             let resp = egui::CollapsingHeader::new(&el.name)
                                 .id_salt(header_id)
                                 .default_open(default_open)
@@ -348,13 +356,13 @@ impl TabViewer for Viewer {
                     if egui::CollapsingHeader::new(format!("Splices ({})", filtered_splices.len()))
                         .open(category_open("Splice"))
                         .show(ui, |ui| {
-                        for el in &filtered_splices {
+                        for (idx, el) in filtered_splices.iter().enumerate() {
                             let key = sel_key(el);
                             let name_alt = [el.name.clone(), el.id.clone()];
                             let diagrams = diagram_instances(cross_ref_map, "Splice", &name_alt, &el.diagram_name);
                             let is_selected = sel.as_ref().map(|(t, n)| t == "Splice" && (n == &el.name || n == &el.id)).unwrap_or(false);
                             let default_open = state.expanded_elements.borrow().contains(&("Splice".to_string(), key.clone())) || is_selected;
-                            let header_id = ("element", "Splice", el.name.as_str(), default_open);
+                            let header_id = ("element", "Splice", key.as_str(), idx, default_open);
                             let resp = egui::CollapsingHeader::new(&el.name)
                                 .id_salt(header_id)
                                 .default_open(default_open)
@@ -398,13 +406,13 @@ impl TabViewer for Viewer {
                     if egui::CollapsingHeader::new(format!("Connectors ({})", filtered_connectors.len()))
                         .open(category_open("Connector"))
                         .show(ui, |ui| {
-                        for el in &filtered_connectors {
+                        for (idx, el) in filtered_connectors.iter().enumerate() {
                             let key = sel_key(el);
                             let name_alt = [el.name.clone(), el.id.clone()];
                             let diagrams = diagram_instances(cross_ref_map, "Connector", &name_alt, &el.diagram_name);
                             let is_selected = sel.as_ref().map(|(t, n)| t == "Connector" && (n == &el.name || n == &el.id)).unwrap_or(false);
                             let default_open = state.expanded_elements.borrow().contains(&("Connector".to_string(), key.clone())) || is_selected;
-                            let header_id = ("element", "Connector", el.name.as_str(), default_open);
+                            let header_id = ("element", "Connector", key.as_str(), idx, default_open);
                             let resp = egui::CollapsingHeader::new(&el.name)
                                 .id_salt(header_id)
                                 .default_open(default_open)
@@ -448,7 +456,7 @@ impl TabViewer for Viewer {
                     if egui::CollapsingHeader::new(format!("Wires ({})", filtered_wires.len()))
                         .open(category_open("Wire"))
                         .show(ui, |ui| {
-                        for w in &filtered_wires {
+                        for (idx, w) in filtered_wires.iter().enumerate() {
                             let key = wire_sel_key(w);
                             let name_alt = [w.name.clone(), w.id.clone()];
                             let diagrams = diagram_instances(cross_ref_map, "Wire", &name_alt, &w.diagram_name);
@@ -458,7 +466,7 @@ impl TabViewer for Viewer {
                                 exp.contains(&("Wire".to_string(), key.clone()))
                                     || is_selected
                             };
-                            let header_id = ("element", "Wire", w.name.as_str(), default_open);
+                            let header_id = ("element", "Wire", key.as_str(), idx, default_open);
                             let resp = egui::CollapsingHeader::new(&w.name)
                                 .id_salt(header_id)
                                 .default_open(default_open)
@@ -515,6 +523,12 @@ impl TabViewer for Viewer {
                 state.ensure_diagram_loaded();
                 if let Some(err) = &state.load_error {
                     ui.colored_label(egui::Color32::RED, err);
+                }
+                if let Some(err) = &state.symbol_library_error {
+                    ui.colored_label(egui::Color32::RED, format!("Symbol library: {}", err));
+                }
+                if let Some(ref lib) = state.symbol_library {
+                    ui.label(format!("Symbol library: {} ({} symbols)", lib.name, lib.symbols.len()));
                 }
                 let rect = ui.available_rect_before_wrap();
                 let response = ui.allocate_rect(rect, egui::Sense::click_and_drag());
@@ -868,6 +882,40 @@ impl eframe::App for MicroCapitalApp {
                             });
                         }
                     }
+                    // TODO: 
+                    // if ui.button("Load Symbol Library…").clicked() {
+                    //     ui.close();
+                    //     #[cfg(not(target_arch = "wasm32"))]
+                    //     {
+                    //         if let Some(path) = rfd::FileDialog::new()
+                    //             .add_filter("Symbol Library XML", &["xml"])
+                    //             .pick_file()
+                    //         {
+                    //             match std::fs::File::open(&path) {
+                    //                 Ok(f) => {
+                    //                     let reader = std::io::BufReader::new(f);
+                    //                     match parse_symbol_library(reader) {
+                    //                         Ok(lib) => {
+                    //                             let mut state = self.state.borrow_mut();
+                    //                             state.symbol_library = Some(lib);
+                    //                             state.symbol_library_path = Some(path);
+                    //                             state.symbol_library_error = None;
+                    //                         }
+                    //                         Err(e) => {
+                    //                             self.state.borrow_mut().symbol_library_error = Some(e);
+                    //                             self.state.borrow_mut().symbol_library = None;
+                    //                             self.state.borrow_mut().symbol_library_path = None;
+                    //                         }
+                    //                     }
+                    //                 }
+                    //                 Err(e) => {
+                    //                     self.state.borrow_mut().symbol_library_error =
+                    //                         Some(e.to_string());
+                    //                 }
+                    //             }
+                    //         }
+                    //     }
+                    // }
                     if ui.button("Quit").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                         ui.close();

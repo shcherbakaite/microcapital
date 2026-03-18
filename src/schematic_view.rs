@@ -21,8 +21,8 @@ use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
 use std::sync::Arc;
 use crate::model::{
-    ConnectorKind, ConnectorOutline, ConnectorPin, ConnectorSymbol, CrossRefKey, CrossRefMap,
-    DevicePin, DiagramContent, HorizontalJust, Schemindicator, TextStyle, VerticalJust,
+    ConnectorKind, ConnectorOutline, ConnectorPin, ConnectorSymbol, CrossRefKey,
+    CrossRefMap, DevicePin, DiagramContent, HorizontalJust, Schemindicator, TextStyle, VerticalJust,
 };
 
 /// Brightens a color for dark mode contrast (does not change hue). Used for device colors only.
